@@ -41,6 +41,7 @@ module.exports = function (client, options) {
     // Reinitialize client object with new version TODO: move out of its constructor?
     client.version = minecraftVersion
     client.state = states.HANDSHAKING
+    client.emit('version_detected', minecraftVersion); // Hack: using this to set settings.json.minecraft_version
 
     // Let other plugins such as Forge/FML (modinfo) respond to the ping response
     if (client.autoVersionHooks) {
