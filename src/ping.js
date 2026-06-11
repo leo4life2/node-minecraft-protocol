@@ -38,7 +38,16 @@ function ping (options) {
       reject(err)
     })
     client.once('server_info', function (packet) {
-      const data = JSON.parse(packet.response)
+      let data
+      try {
+        data = JSON.parse(packet.response)
+      } catch (err) {
+        // a throw here would be an uncaught exception, not a rejection
+        clearTimeout(closeTimer)
+        client.end()
+        reject(new Error(`Malformed server status response: ${err.message}`))
+        return
+      }
       const start = Date.now()
       const maxTime = setTimeout(() => {
         clearTimeout(closeTimer)
