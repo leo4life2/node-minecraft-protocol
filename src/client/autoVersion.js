@@ -41,8 +41,22 @@ module.exports = function (client, options) {
 
     // Reinitialize client object with new version TODO: move out of its constructor?
     client.version = minecraftVersion
-    client.state = states.HANDSHAKING
+    // Emit BEFORE the state assignment: setting client.state builds the
+    // serializer, which throws synchronously for versions minecraft-data has
+    // no protocol data for ('No data available for version X'). Listeners
+    // (e.g. a data-availability gate) must see the detected version and get
+    // the chance to classify/abort before that construction can blow up.
     client.emit('version_detected', minecraftVersion); // Hack: using this to set settings.json.minecraft_version
+    try {
+      client.state = states.HANDSHAKING
+    } catch (err) {
+      // Version resolved but protocol data is missing (data-less snapshot/rc
+      // protocol mappings): surface as a client 'error' event instead of a
+      // raw synchronous throw from inside the ping callback — a throw here
+      // escapes as an uncaughtException and dodges every error rail.
+      client.emit('error', err)
+      return
+    }
 
     // Let other plugins such as Forge/FML (modinfo) respond to the ping response
     if (client.autoVersionHooks) {
