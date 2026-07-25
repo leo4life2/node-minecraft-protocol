@@ -13,6 +13,14 @@ const createDecipher = require('./transforms/encryption').createDecipher
 
 const closeTimeout = 30 * 1000
 
+// Handler-boundary packet classes (kept in lockstep with the tolerant play
+// parser's sets in node-minecraft-protocol-forge/src/client/tolerantPlayParser.js):
+// losing one of these zombies the session, so a handler throw on them fails
+// loudly; everything else in play state is drop-safe.
+const HANDLER_CRITICAL_PACKETS = new Set(['keep_alive', 'login', 'position', 'respawn', 'map_chunk', 'update_health'])
+// Play packets whose drop means the bot's inventory view is now wrong.
+const HANDLER_INVENTORY_PACKETS = new Set(['window_items', 'set_slot', 'entity_equipment'])
+
 class Client extends EventEmitter {
   constructor (isServer, version, customPackets, hideErrors = false) {
     super()
@@ -80,11 +88,44 @@ class Client extends EventEmitter {
       this.emit('error', e)
     })
     this._mcBundle = []
+    // Packet-handler error boundary (MinePal crash hardening, Mechanism A):
+    // protodef's FullPacketParser pushes OUTSIDE its try/catch, so a throw
+    // inside any packet listener used to propagate to uncaughtException and
+    // kill the whole process mid-session. Split identical to the tolerant
+    // play parser (node-minecraft-protocol-forge tolerantPlayParser):
+    // degradable play packets are dropped with a throttled log (+ a
+    // staleness signal for inventory-class packets); critical packets and
+    // every non-play state convert the throw into a client 'error' so the
+    // embedder's classified disconnect/recovery path runs instead of a raw
+    // process death.
     const emitPacket = (parsed) => {
-      this.emit('packet', parsed.data, parsed.metadata, parsed.buffer, parsed.fullBuffer)
-      this.emit(parsed.metadata.name, parsed.data, parsed.metadata)
-      this.emit('raw.' + parsed.metadata.name, parsed.buffer, parsed.metadata)
-      this.emit('raw', parsed.buffer, parsed.metadata)
+      try {
+        this.emit('packet', parsed.data, parsed.metadata, parsed.buffer, parsed.fullBuffer)
+        this.emit(parsed.metadata.name, parsed.data, parsed.metadata)
+        this.emit('raw.' + parsed.metadata.name, parsed.buffer, parsed.metadata)
+        this.emit('raw', parsed.buffer, parsed.metadata)
+      } catch (err) {
+        const name = parsed.metadata.name
+        if (state !== states.PLAY || HANDLER_CRITICAL_PACKETS.has(name)) {
+          // A handler failure on a session-critical packet (or during
+          // handshake/login/config) leaves the session unusable — fail
+          // loudly through the classified error path, never zombie.
+          err.message = `Error in '${name}' packet handler (${state} state): ${err.message}`
+          this.emit('error', err)
+          return
+        }
+        this._handlerErrorCounts = this._handlerErrorCounts || {}
+        const count = (this._handlerErrorCounts[name] = (this._handlerErrorCounts[name] || 0) + 1)
+        if (count === 1 || count % 100 === 0) {
+          console.warn(`[mc-handler] '${name}' packet handler threw (packet dropped, ${count} so far): ${err.message}`)
+        }
+        if (HANDLER_INVENTORY_PACKETS.has(name)) {
+          // Same signal the tolerant parser emits for unparseable inventory
+          // packets: the bot's item view is now stale; MinePal listens and
+          // reports it through its governed channel.
+          this.emit('forge_inventory_unreliable', { packet: name, id: -1, handlerError: true })
+        }
+      }
     }
     this.deserializer.on('data', (parsed) => {
       parsed.metadata.name = parsed.data.name
