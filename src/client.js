@@ -87,6 +87,141 @@ class Client extends EventEmitter {
       if (!this.compressor) { this.splitter.pipe(this.deserializer) } else { this.decompressor.pipe(this.deserializer) }
       this.emit('error', e)
     })
+    // Degrade-gracefully guard (capability-fruit F1): a PARSE failure on an
+    // inventory-class play packet used to be swallowed whole by protodef's
+    // FullPacketParser (partialReadError -> log + drop) — one unparseable
+    // slot blacked out an entire window_items/login sync with no signal.
+    // Wrap the parser so the failure is re-parsed leniently: every slot
+    // before the poison point is delivered intact, the poisoned slot
+    // degrades to id+count (components flagged unknown), slots after it are
+    // unrecoverable in principle (component payloads carry no length
+    // prefix) and degrade to empty — and the same inventory-staleness
+    // signal the tolerant forge parser uses tells the embedder the view is
+    // partial. Anything non-inventory (or unsalvageable) keeps the old path.
+    //
+    // Data-driven: walks the packet's own container definition from
+    // minecraft-data with the compiled protocol reader — no per-version or
+    // per-component special cases.
+    const salvageInventoryParseError = (buffer) => {
+      try {
+        if (this.isServer || state !== states.PLAY || !buffer || buffer.length === 0) return null
+        const proto = this.deserializer.proto
+        if (!proto || typeof proto.read !== 'function') return null
+        const pdata = require('minecraft-data')(this.version)
+        const toClient = pdata?.protocol?.play?.toClient
+        const mappings = toClient?.types?.packet?.[1]?.[0]?.type?.[1]?.mappings
+        if (!mappings) return null
+        const idRead = proto.read(buffer, 0, 'varint')
+        let name = null
+        for (const [k, v] of Object.entries(mappings)) {
+          if (parseInt(k, 16) === idRead.value) { name = v; break }
+        }
+        if (!name || !HANDLER_INVENTORY_PACKETS.has(name)) return null
+        const def = toClient.types['packet_' + name]
+        if (!Array.isArray(def) || def[0] !== 'container' || !Array.isArray(def[1])) return null
+        // id+count prefix stub is only meaningful when the Slot layout starts
+        // with itemCount/itemId varints (the components era, 1.20.5+)
+        const slotDef = pdata.protocol.types?.Slot
+        const slotPrefixOk = Array.isArray(slotDef) && slotDef[0] === 'container' &&
+          slotDef[1]?.[0]?.name === 'itemCount' && slotDef[1]?.[0]?.type === 'varint'
+        const readSlotStub = (buffer, offset) => {
+          const c = proto.read(buffer, offset, 'varint')
+          if (c.value === 0) return { itemCount: 0 }
+          const id = proto.read(buffer, offset + c.size, 'varint')
+          return {
+            itemCount: c.value,
+            itemId: id.value,
+            addedComponentCount: 0,
+            removedComponentCount: 0,
+            components: [],
+            removeComponents: [],
+            componentsTruncated: true
+          }
+        }
+        const params = {}
+        const degraded = { firstUnreadable: null, slotsSalvaged: 0, slotsStubbed: 0, slotsUnknown: 0 }
+        let offset = idRead.size
+        for (const field of def[1]) {
+          if (degraded.firstUnreadable !== null) break // boundary lost — later fields get defaults below
+          if (typeof field.type === 'string') {
+            try {
+              const r = proto.read(buffer, offset, field.type)
+              params[field.name] = r.value
+              offset += r.size
+            } catch (err) {
+              if (field.type !== 'Slot') return null // unknown boundary on a non-slot field — nothing trustworthy to deliver
+              degraded.firstUnreadable = field.name
+              if (slotPrefixOk) {
+                try { params[field.name] = readSlotStub(buffer, offset); degraded.slotsStubbed++ } catch { params[field.name] = { itemCount: 0 }; degraded.slotsUnknown++ }
+              } else { params[field.name] = { itemCount: 0 }; degraded.slotsUnknown++ }
+            }
+          } else if (Array.isArray(field.type) && field.type[0] === 'array' &&
+                     field.type[1]?.type === 'Slot' && field.type[1]?.countType === 'varint') {
+            let cnt
+            try { const c = proto.read(buffer, offset, 'varint'); cnt = c.value; offset += c.size } catch { return null }
+            if (cnt < 0 || cnt > 4096) return null
+            const items = []
+            for (let i = 0; i < cnt; i++) {
+              try {
+                const r = proto.read(buffer, offset, 'Slot')
+                items.push(r.value)
+                offset += r.size
+                degraded.slotsSalvaged++
+              } catch (err) {
+                degraded.firstUnreadable = `${field.name}[${i}]`
+                if (slotPrefixOk) {
+                  try { items.push(readSlotStub(buffer, offset)); degraded.slotsStubbed++ } catch { items.push({ itemCount: 0 }); degraded.slotsUnknown++ }
+                } else { items.push({ itemCount: 0 }); degraded.slotsUnknown++ }
+                while (items.length < cnt) { items.push({ itemCount: 0 }); degraded.slotsUnknown++ }
+                break
+              }
+            }
+            params[field.name] = items
+          } else {
+            return null // container shape we don't know how to walk
+          }
+        }
+        if (degraded.firstUnreadable === null) return null // strict parse failed but the walk didn't? — keep the loud path
+        // fields past the poison point that never got a value: safe defaults
+        for (const field of def[1]) {
+          if (field.name in params) continue
+          if (field.type === 'Slot') params[field.name] = { itemCount: 0 }
+          else if (Array.isArray(field.type) && field.type[0] === 'array') params[field.name] = []
+          else params[field.name] = 0
+        }
+        this._invParseErrorCounts = this._invParseErrorCounts || {}
+        const n = (this._invParseErrorCounts[name] = (this._invParseErrorCounts[name] || 0) + 1)
+        if (n === 1 || n % 100 === 0) {
+          console.warn(`[mc-parse] '${name}' parse failed at ${degraded.firstUnreadable} — salvaged ${degraded.slotsSalvaged} slot(s), ${degraded.slotsStubbed} degraded to id+count, ${degraded.slotsUnknown} unknown (${n} so far)`)
+        }
+        this.emit('forge_inventory_unreliable', { packet: name, id: idRead.value, parseError: true, salvaged: degraded })
+        // Same shape FullPacketParser.parsePacketBuffer returns, so the
+        // normal stream delivery path applies (size set to the full chunk
+        // length so the partial-packet log stays quiet — the degradation is
+        // already reported through the signal above).
+        return {
+          data: { name, params },
+          metadata: { size: buffer.length, salvagedFromParseError: degraded },
+          buffer,
+          fullBuffer: buffer
+        }
+      } catch (err) {
+        return null
+      }
+    }
+    // FullPacketParser swallows partialReadErrors (log + drop) before any
+    // 'error' event fires, so the guard must sit inside the parse call
+    // itself.
+    const originalParsePacketBuffer = this.deserializer.parsePacketBuffer.bind(this.deserializer)
+    this.deserializer.parsePacketBuffer = (chunk) => {
+      try {
+        return originalParsePacketBuffer(chunk)
+      } catch (err) {
+        const salvaged = salvageInventoryParseError(chunk)
+        if (salvaged) return salvaged
+        throw err
+      }
+    }
     this._mcBundle = []
     // Packet-handler error boundary (MinePal crash hardening, Mechanism A):
     // protodef's FullPacketParser pushes OUTSIDE its try/catch, so a throw
