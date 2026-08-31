@@ -408,8 +408,15 @@ class Client extends EventEmitter {
       this.splitter.unpipe(this.deserializer)
       this.splitter.pipe(this.decompressor).pipe(this.deserializer)
     } else {
-      this.decompressor.threshold = threshold
-      this.compressor.threshold = threshold
+      // HF12: these used to assign `.threshold`, a property nothing reads —
+      // the transforms compare against `.compressionThreshold` — so a
+      // re-negotiated threshold (a second login `compress` / play
+      // `set_compression`) was silently ignored and the compressor kept
+      // framing against the STALE value, a latent violation of the
+      // compression framing law (sub-threshold packets must go out with
+      // data-length 0; only >= threshold may be zlib-compressed).
+      this.decompressor.compressionThreshold = threshold
+      this.compressor.compressionThreshold = threshold
     }
   }
 
