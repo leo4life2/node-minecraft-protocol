@@ -32,12 +32,29 @@ function ping (options) {
 
   const client = new Client(false, version.minecraftVersion)
   return new Promise((resolve, reject) => {
+    let answered = false // server_info seen (or we ended the ping ourselves)
     client.on('error', function (err) {
       clearTimeout(closeTimer)
+      answered = true
       client.end()
       reject(err)
     })
+    // HF21 (MinePal fork): a peer that ACCEPTS the TCP connection and then
+    // closes it before answering the status request (proxy drop, a server
+    // still booting behind a front, a port forwarded to nothing) used to
+    // leave this promise pending until closeTimeout (120s) — the caller's
+    // join sat on "(ping never completed)" for its whole watchdog window.
+    // Reject at once with a typed marker so the caller can classify it.
+    client.on('end', function () {
+      if (answered) return
+      answered = true
+      clearTimeout(closeTimer)
+      const err = new Error('status ping: the connection closed before the server answered')
+      err.pingClosed = true
+      reject(err)
+    })
     client.once('server_info', function (packet) {
+      answered = true
       let data
       try {
         data = JSON.parse(packet.response)
