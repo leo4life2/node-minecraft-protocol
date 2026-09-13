@@ -232,6 +232,9 @@ const values = {
   vec3i: {
     x: 0, y: 0, z: 0
   },
+  vec3i16: {
+    x: 0, y: 0, z: 0
+  },
   count: 1, // TODO : might want to set this to a correct value
   bool: true,
   f64: 99999.2222,
@@ -446,6 +449,10 @@ const values = {
   GlobalPos: {
     dimensionName: 'minecraft:overworld',
     location: { x: 0, y: 64, z: 0 }
+  },
+  GameRule: {
+    name: '',
+    value: ''
   }
 }
 

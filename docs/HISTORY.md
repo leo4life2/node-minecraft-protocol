@@ -1,5 +1,34 @@
 # History
 
+## 1.68.0
+* [fix(ping): reject when the connection closes before a status response (#1514)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/0903e593a9936a5e5deffc1d4b229230de4258d8) (thanks @u9g)
+
+## 1.67.0
+* [🎈 26.1 (#1469)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/404fb097e47244d366a6011bfe4f9d9d530f7ded) (thanks @rom1504bot)
+* [Send interim Client Information (settings) packet during configuration phase (#1499)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/aa23a03964bf84e2f7fe813818a4ec5b7b2a1270) (thanks @AChompSitsIn)
+* [Add client_transfer example (#1507)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/73dc5bcde5c03a3e95d5a69e5c945ecc2bc766ae) (thanks @mliem2k)
+* [Bump @types/node from 25.9.5 to 26.1.1 (#1505)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/e8bf2323039faec2d8bdf5b5b5fbf5aa14722cb9) (thanks @dependabot[bot])
+* [Fix lpVec3 packet endianness (#1506)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/d0c522d0f9b37dfe2c83bcd62d1d005a13642b1f) (thanks @GenerelSchwerz)
+
+## 1.66.2
+* [Revert "Fix computeChatChecksum returning unsigned byte for i8 schema (#1485)" (#1489)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/db39bcbfa6d2419b17217da7f4eea6b689a5ac49) (thanks @extremeheat)
+
+## 1.66.1
+* [Bump prismarine-auth from 2.7.0 to 3.1.1 (#1477)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/12f9a34fe259b2b96fa154f61f93a034d1d24120) (thanks @dependabot[bot])
+* [readme: fix aresrpg repo link (#1483)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/3162e72c232fb5b7b05fc035de2692e2199250a3) (thanks @AnotherPillow)
+* [Fix computeChatChecksum returning unsigned byte for i8 schema (#1485)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/a263bb92338c009701cc5d1eaa8fba597dde3946) (thanks @mio-rei)
+
+## 1.66.0
+* [Use sync zlib in packet compression to avoid uncaught errors (#1476)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/b23a31bf6754634dd7be1bd70d493f85e2da7bfa) (thanks @rom1504)
+
+## 1.65.0
+* [Update CI to Node 24 (#1473)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/8008fe065787d50c7ab490cb0a503cb9200043fe) (thanks @rom1504)
+* [Fix publish condition for npm-publish v4 (#1472)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/9bc871da00a82058ad68f7fb6fd661c268f6a7a9) (thanks @rom1504)
+* [Switch to trusted publishing via OIDC (#1471)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/f87f9d5b35888be3bccece3edf5761183cf916a4) (thanks @rom1504)
+
+## 1.64.1
+* [Backport velocity field changes from 1.21.9+ to older versions (#1467)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/b66c9aa08052859fb2e3075a3d6c6f84a84e77f1) (thanks @SuperGamerTron)
+
 ## 1.64.0
 * [🎈 1.21.11 (#1457)](https://github.com/PrismarineJS/node-minecraft-protocol/commit/77f4167d93a70322f2963c3c81586c8fe0c6c299) (thanks @rom1504bot)
 
