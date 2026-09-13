@@ -57,6 +57,20 @@ const nbtValue = {
 
 function getFixedPacketPayload (version, packetName) {
   if (packetName === 'teams') {
+    if (version['>=']('26.2')) {
+      return {
+        team: 'test_team',
+        mode: 'add',
+        name: nbtValue,
+        prefix: nbtValue,
+        suffix: nbtValue,
+        nameTagVisibility: 'always',
+        collisionRule: 'always',
+        color: 'red', // Optional<TeamColor> (26.2 reordered the add/change body and replaced the formatting varint)
+        flags: { friendly_fire: true, see_friendly_invisible: false },
+        players: ['player1', 'player2']
+      }
+    }
     if (version['>=']('1.21.6')) {
       return {
         team: 'test_team',
@@ -453,7 +467,8 @@ const values = {
   GameRule: {
     name: '',
     value: ''
-  }
+  },
+  TeamColor: 'red'
 }
 
 function getValue (_type, packet) {
