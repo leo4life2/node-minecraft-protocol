@@ -312,6 +312,30 @@ for (const supportedVersion of mc.supportedVersions) {
       server.on('close', done)
     })
 
+    it('sends a login success sessionId on 26.2+', function (done) {
+      if (!version['>=']('26.2')) return this.skip() // ClientboundLoginFinishedPacket grew a sessionId UUID in 26.2 (protocol 776)
+      const server = mc.createServer({
+        'online-mode': false,
+        version: version.minecraftVersion,
+        port: PORT
+      })
+      server.on('listening', function () {
+        const client = mc.createClient({
+          username: 'sessions',
+          host: '127.0.0.1',
+          version: version.minecraftVersion,
+          port: PORT
+        })
+        client.on('packet', (data, { name }) => {
+          if (name === 'success') {
+            assert.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.sessionId), 'sessionId is a v4 UUID: ' + data.sessionId)
+            server.close()
+          }
+        })
+      })
+      server.on('close', done)
+    })
+
     it('clients can log in and chat', function (done) {
       const server = mc.createServer({
         'online-mode': false,
