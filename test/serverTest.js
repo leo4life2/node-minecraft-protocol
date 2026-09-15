@@ -336,6 +336,35 @@ for (const supportedVersion of mc.supportedVersions) {
       server.on('close', done)
     })
 
+    it('play.login carries the 26.3 SpawnInfo (varint gamemode, optvarint previousGamemode)', function (done) {
+      if (!version['>=']('26.3')) return this.skip() // CommonPlayerSpawnInfo: GameType.STREAM_CODEC (varint) + OPTIONAL_VAR_INT (0 = none, else id + 1) since 26.3 (protocol 777)
+      const server = mc.createServer({
+        'online-mode': false,
+        version: version.minecraftVersion,
+        port: PORT
+      })
+      server.on('playerJoin', function (serverClient) {
+        const packet = loginPacket(serverClient, server)
+        assert.ok(['survival', 'creative', 'adventure', 'spectator'].includes(packet.worldState.gamemode), 'the captured 26.3 login packet names the gamemode: ' + packet.worldState.gamemode)
+        assert.strictEqual(packet.worldState.previousGamemode, 0, 'the captured 26.3 login packet carries previousGamemode 0 (= none)')
+        serverClient.write('login', { ...packet, worldState: { ...packet.worldState, gamemode: 'creative', previousGamemode: 2 } })
+      })
+      server.on('listening', function () {
+        const client = mc.createClient({
+          username: 'spawninfo',
+          host: '127.0.0.1',
+          version: version.minecraftVersion,
+          port: PORT
+        })
+        client.on('login', (packet) => {
+          assert.strictEqual(packet.worldState.gamemode, 'creative')
+          assert.strictEqual(packet.worldState.previousGamemode, 2) // OPTIONAL_VAR_INT 2 = survival (id 0) + 1
+          server.close()
+        })
+      })
+      server.on('close', done)
+    })
+
     it('clients can log in and chat', function (done) {
       const server = mc.createServer({
         'online-mode': false,

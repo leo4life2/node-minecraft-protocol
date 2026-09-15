@@ -468,7 +468,15 @@ const values = {
     name: '',
     value: ''
   },
-  TeamColor: 'red'
+  TeamColor: 'red',
+  // 26.3 (protocol 777)
+  VecDelta: { onGround: true, dX: 4096, dY: -512, dZ: 12 }, // ClientboundMoveEntityPacket.{Pos,PosRot}: the linear form (stepCount 0)
+  PositionStep: { position: { x: 1.5, y: 64, z: -2.25 }, tickOffset: 3 },
+  PositionPath: { pathType: 'linear', path: { x: 1.5, y: 64, z: -2.25 } }, // ClientboundEntityPositionSyncPacket
+  SwingAnimation: { type: 'whack', duration: 6 }, // ClientboundSwingAnimationPacket + attack_animation/interact_animation components
+  ResolvableInt: { isConstant: true, value: 8 },
+  ResolvableFloat: { isConstant: false, value: 'minecraft:default_speed' },
+  SignText: { messages: [nbtValue, nbtValue, nbtValue, nbtValue], filteredMessages: undefined, color: 'black', hasGlowingText: false }
 }
 
 function getValue (_type, packet) {
