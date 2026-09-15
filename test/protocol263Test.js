@@ -200,4 +200,60 @@ describe('26.3 wire (protocol 777)', function () {
       assert.ok(!Object.values(mappings).includes('map_color'))
     })
   })
+
+  describe('payloads that changed shape in 26.3 (found on a live 26.3 server, javap-verified on the release jar)', function () {
+    function slotWith (components) {
+      return { itemCount: 1, itemId: 1, addedComponentCount: components.length, removedComponentCount: 0, components, removeComponents: [] }
+    }
+    const template = (itemId) => ({ itemId, count: 1, addedComponentCount: 0, removedComponentCount: 0, components: [], removeComponents: [] })
+    // the decorated-pot advancement icon as the server wrote it: ItemStackTemplate { decorated_pot (392), count 1, +1 component: pot_decorations
+    // { back: none, left: sherd 1609, right: none, front: sherd 1605 } } - PotDecorations.STREAM_CODEC is four optional ItemStackTemplate sides
+    const realIcon = '880301010' + '04c' + '00' + '01c90c010000' + '00' + '01c50c010000'
+    const potSides = { back: undefined, left: template(1609), right: undefined, front: template(1605) }
+    it('pot_decorations: four optional ItemStackTemplate sides (back, left, right, front), no longer a varint id list', function () {
+      const buffer = serializer.createPacketBuffer({ name: 'set_slot', params: { windowId: 0, stateId: 1, slot: 0, item: slotWith([{ type: 'pot_decorations', data: potSides }]) } })
+      assert.ok(buffer.toString('hex').endsWith('4c' + '00' + '01c90c010000' + '00' + '01c50c010000'), 'component id 76 then the four optional sides as the 26.3 server writes them')
+      const parsed = deserializer.parsePacketBuffer(buffer)
+      assert.strictEqual(parsed.metadata.size, buffer.length)
+      assert.deepStrictEqual(parsed.data.params.item.components[0].data, potSides)
+    })
+    it('advancements: DisplayInfo.icon is an ItemStackTemplate (item id, count, component patch), the tree position rides the entry', function () {
+      const entry = {
+        key: 'minecraft:adventure/craft_decorated_pot_using_only_sherds',
+        value: {
+          parentId: 'minecraft:adventure/salvage_sherd',
+          displayData: {
+            title: nbtText('t'),
+            description: nbtText('d'),
+            icon: { ...template(392), addedComponentCount: 1, components: [{ type: 'pot_decorations', data: potSides }] },
+            frameType: 0,
+            flags: { unused: 0, hidden: 0, show_toast: 1, has_background_texture: 0 },
+            backgroundTexture: undefined
+          },
+          requirements: [['pot_crafted_using_only_sherds']],
+          sendsTelemtryData: true
+        },
+        xCord: 2,
+        yCord: 16.5
+      }
+      const params = { reset: true, advancementMapping: [entry], identifiers: [], progressMapping: [], showAdvancements: false }
+      const buffer = serializer.createPacketBuffer({ name: 'advancements', params })
+      assert.ok(buffer.toString('hex').includes(realIcon), 'the icon bytes are the server\'s: 8803 (decorated_pot) 01 (count) 01 00 (patch counts) 4c (pot_decorations) + sides')
+      // ... followed by frame 00, flags 00000002, requirements, telemetry, then x/y as f32 at the ENTRY level (PositionedAdvancement)
+      assert.ok(buffer.toString('hex').includes(realIcon + '00' + '00000002' + '01' + '01' + '1d' + Buffer.from('pot_crafted_using_only_sherds').toString('hex') + '01' + '40000000' + '41840000'))
+      const back = cycle('advancements', params)
+      assert.deepStrictEqual(back.advancementMapping[0].value.displayData.icon.components[0].data, potSides)
+      assert.strictEqual(back.advancementMapping[0].xCord, 2)
+      assert.strictEqual(back.advancementMapping[0].value.displayData.xCord, undefined, 'x/y no longer live in DisplayInfo')
+    })
+    it('trim: the inline TrimMaterial is one asset id + description (26.2 carried a MaterialAssetGroup with per-armor overrides)', function () {
+      const material = { data: { assetId: 'minecraft:quartz', description: nbtText('Quartz') } } // registryEntryHolder: no materialId = inline (id byte 0) followed by the data
+      const buffer = serializer.createPacketBuffer({ name: 'set_slot', params: { windowId: 0, stateId: 1, slot: 0, item: slotWith([{ type: 'trim', data: { material, pattern: { patternId: 3 } } }]) } })
+      const hex = buffer.toString('hex')
+      assert.ok(hex.includes('00' + '10' + Buffer.from('minecraft:quartz').toString('hex') + '08' + '0006' + Buffer.from('Quartz').toString('hex') + '04'), 'inline id 0, the asset id string, the description NBT string, then the pattern as registry id + 1')
+      const parsed = deserializer.parsePacketBuffer(buffer)
+      assert.strictEqual(parsed.metadata.size, buffer.length)
+      assert.deepStrictEqual(parsed.data.params.item.components[0].data.material, material)
+    })
+  })
 })

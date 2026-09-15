@@ -257,6 +257,8 @@ const values = {
   Slot: slotValue,
   UntrustedSlot: slotValue,
   HashedSlot: slotValue,
+  // 26.2+ ItemStackTemplate (advancement icons, pot_decorations sides, sulfur_cube_content): item id, count, component patch
+  ItemStackTemplate: { itemId: 1, count: 1, addedComponentCount: 0, removedComponentCount: 0, components: [], removeComponents: [] },
   SlotComponent: {
     type: 'hide_tooltip'
   },
