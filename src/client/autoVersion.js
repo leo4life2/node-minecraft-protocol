@@ -46,7 +46,7 @@ module.exports = function (client, options) {
     // no protocol data for ('No data available for version X'). Listeners
     // (e.g. a data-availability gate) must see the detected version and get
     // the chance to classify/abort before that construction can blow up.
-    client.emit('version_detected', minecraftVersion); // Hack: using this to set settings.json.minecraft_version
+    client.emit('version_detected', minecraftVersion) // Hack: using this to set settings.json.minecraft_version
     try {
       client.state = states.HANDSHAKING
     } catch (err) {
