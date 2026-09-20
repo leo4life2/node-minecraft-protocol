@@ -188,7 +188,19 @@ module.exports = function (client, options) {
   client.on('hide_message', (packet) => {
     if (mcData.supportFeature('useChatSessions')) {
       const signature = packet.signature || client._signatureCache[packet.id]
-      if (signature) client._lastSeenMessages = client._lastSeenMessages.map(ack => (ack.signature === signature && ack.pending) ? null : ack)
+      if (!signature) return
+      // Vanilla LastSeenMessagesTracker.ignorePending: the first PENDING entry carrying this signature is nulled
+      // IN PLACE - the ring keeps its tail (offset) and its pending count, so the next chat_message / signed command
+      // still reports the true number of messages seen since the last acknowledgement. (Re-instantiating the ring
+      // through Array.prototype.map reset both counters and left null entries the checksum walk tripped on.)
+      const ring = client._lastSeenMessages
+      for (let i = 0; i < ring.capacity; i++) {
+        const entry = ring[i]
+        if (entry && entry.pending && signatureEquals(entry.signature, signature)) {
+          ring[i] = null
+          break
+        }
+      }
     }
   })
 
@@ -411,8 +423,17 @@ module.exports = function (client, options) {
     if (message.startsWith('/')) {
       const command = message.slice(1)
       if (mcData.supportFeature('useChatSessions')) { // 1.19.3+
-        const { acknowledged, acknowledgements } = getAcknowledgements()
         const canSign = client.profileKeys && client._session
+        if (mcData.supportFeature('seperateSignedChatCommandPacket') && !canSign) {
+          // 1.20.5+ unsigned command (vanilla ClientPacketListener.sendUnsignedCommand): the packet carries the
+          // command string only - no lastSeen update - so the server's tracked window does not move and the client
+          // tracker must not move either. Acknowledging here (or resetting `pending`) made the NEXT chat_message
+          // report a short offset with a bit set on a slot the server still holds null ->
+          // multiplayer.disconnect.chat_validation_failed.
+          client.write('chat_command', { command })
+          return
+        }
+        const { acknowledged, acknowledgements } = getAcknowledgements()
         const chatPacket = {
           command,
           timestamp: options.timestamp,
@@ -593,6 +614,12 @@ class SignatureCache extends Array {
     this[this.index++] = e
     this.index %= this.capacity
   }
+}
+
+function signatureEquals (a, b) {
+  if (!a || !b) return false
+  if (a === b) return true
+  return Buffer.isBuffer(a) && Buffer.isBuffer(b) && a.equals(b)
 }
 
 class LastSeenMessagesWithInvalidation extends Array {
