@@ -20,6 +20,8 @@ function isFormatted (message) {
 
 module.exports = function (client, options) {
   const mcData = require('minecraft-data')(client.version)
+  const signedCommandFields = mcData.protocol?.play.toServer.types.packet_chat_command_signed?.[1]
+  const commandChecksumType = signedCommandFields?.find(field => field.name === 'checksum')?.type
   client._players = {}
   client._lastChatSignature = null
   client._lastRejectedMessage = null
@@ -440,7 +442,7 @@ module.exports = function (client, options) {
           salt: options.salt,
           argumentSignatures: canSign ? signaturesForCommand(command, options.timestamp, options.salt, options.preview, acknowledgements) : [],
           messageCount: client._lastSeenMessages.pending,
-          checksum: computeChatChecksum(client._lastSeenMessages), // 1.21.5+
+          checksum: computeChatChecksum(client._lastSeenMessages, commandChecksumType),
           acknowledged
         }
         client.write((mcData.supportFeature('seperateSignedChatCommandPacket') && canSign) ? 'chat_command_signed' : 'chat_command', chatPacket)

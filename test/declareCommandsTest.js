@@ -1,6 +1,5 @@
-/* eslint-env mocha */
-
 const assert = require('assert')
+const { describe, it, beforeEach, afterEach } = global.describe ? global : require('node:test')
 const EventEmitter = require('events')
 const minecraftDataPath = require.resolve('minecraft-data')
 const injectChatPlugin = require('../src/client/chat')
@@ -41,6 +40,7 @@ describe('declare_commands handling', () => {
     client.signMessage = () => Buffer.from([1])
 
     client.emit('declare_commands', {
+      rootIndex: 0,
       nodes: [
         { children: [1] },
         { children: [2], extraNodeData: { name: 'msg' } },

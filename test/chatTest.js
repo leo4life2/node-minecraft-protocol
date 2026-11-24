@@ -1,4 +1,3 @@
-/* eslint-env mocha */
 // The unsigned client's chat bookkeeping against the 1.19.3+ server-side
 // LastSeenMessagesValidator (offset / acknowledged bitset / 1.21.5+ checksum).
 // Driven through the chat plugin on a fake client emitter - no wire, no keys:
@@ -7,8 +6,10 @@
 const assert = require('assert')
 const crypto = require('crypto')
 const { EventEmitter } = require('events')
+const { describe, it } = global.describe ? global : require('node:test')
 const chatPlugin = require('../src/client/chat')
 const { computeChatChecksum } = require('../src/datatypes/checksums')
+const { createSerializer, createDeserializer } = require('../src/transforms/serializer')
 
 function fakeClient (version) {
   const client = new EventEmitter()
@@ -62,6 +63,36 @@ function bitsOf (acknowledged) {
 }
 
 const last = (client, name) => client.writes.filter(w => w.name === name).pop()
+
+describe('chat checksum wire byte', () => {
+  for (const [version, packetName] of [
+    ['1.21.11', 'chat_command_signed'], // i8
+    ['1.21.11', 'chat_message'], // u8 on the same protocol
+    ['26.1', 'chat_command_signed'] // u8 again on the next protocol
+  ]) {
+    it(`${version} ${packetName} preserves the low byte and reserves zero`, () => {
+      const writer = createSerializer({ state: 'play', version })
+      const reader = createDeserializer({ state: 'play', version, isServer: true })
+      // With 255 leading zeroes, these final signature bytes produce the six raw hash bytes below.
+      for (const [suffix, raw] of [[113, 145], [224, 0], [225, 1], [95, 127], [96, 128], [223, 255]]) {
+        const client = fakeClient(version)
+        const signature = Buffer.alloc(256)
+        signature[255] = suffix
+        client._lastSeenMessages.push(signature)
+        if (packetName === 'chat_command_signed') {
+          client.profileKeys = {}
+          client._session = {}
+        }
+        client._signedChat(packetName === 'chat_message' ? 'hi' : '/list')
+        const wire = writer.createPacketBuffer(last(client, packetName))
+        const expectedByte = raw === 0 ? 1 : raw
+        assert.strictEqual(wire.at(-1), expectedByte)
+        const expectedRead = version === '1.21.11' && packetName === 'chat_command_signed' && raw >= 128 ? raw - 256 : expectedByte
+        assert.strictEqual(reader.parsePacketBuffer(wire).data.params.checksum, expectedRead)
+      }
+    })
+  }
+})
 
 describe('unsigned client chat bookkeeping (1.19.3+ last-seen tracker)', function () {
   it('1.20.5+: an unsigned command leaves the tracker alone, the next chat_message still acknowledges the seen message (offset 1)', () => {

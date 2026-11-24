@@ -4,7 +4,7 @@
 // LastSeenMessagesWithInvalidation ring means walking from its write cursor (`offset`, the next slot to overwrite =
 // the oldest entry) around the ring, exactly as getAcknowledgements does. Walking the ring in storage order instead
 // diverged from the server's checksum as soon as the ring had wrapped (the 21st signed message onwards).
-function computeChatChecksum (lastSeenMessages) {
+function computeChatChecksum (lastSeenMessages, fieldType = 'u8') {
   if (!lastSeenMessages || lastSeenMessages.length === 0) return 1
 
   const ring = Number.isInteger(lastSeenMessages.capacity) && Number.isInteger(lastSeenMessages.offset)
@@ -22,8 +22,8 @@ function computeChatChecksum (lastSeenMessages) {
       checksum = (31 * checksum + sigHash) & 0xffffffff
     }
   }
-  // Convert to byte
-  const result = checksum & 0xff
+  // The 1.21.11 signed command uses i8, while chat messages use u8 for the same wire byte.
+  const result = fieldType === 'i8' ? (checksum << 24) >> 24 : checksum & 0xff
   return result === 0 ? 1 : result
 }
 
